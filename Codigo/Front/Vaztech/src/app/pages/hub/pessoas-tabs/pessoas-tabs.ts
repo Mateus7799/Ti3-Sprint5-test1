@@ -15,7 +15,9 @@ import { InputMaskModule } from 'primeng/inputmask';
 import { TextareaModule } from 'primeng/textarea';
 import { SelectModule } from 'primeng/select';
 import { CpfCnpjMaskDirective } from '../../../directives/cpf-cnpj-mask.directive';
-import { PessoaService } from '../../../services/pessoa.service';
+import { PessoaService, HistoricoPessoaItem } from '../../../services/pessoa.service';
+import { Operacao } from '../../../models/operacao.model';
+import { Servico } from '../../../models/servico.model';
 import {
   AlterarPessoaBody,
   CadastrarPessoaBody,
@@ -26,6 +28,8 @@ import { AvatarModule } from 'primeng/avatar';
 import { ScrollPanelModule } from 'primeng/scrollpanel';
 import { DatePickerModule } from 'primeng/datepicker';
 import { CpfCnpjMaskPipe } from '../../../pipes/cpf-cnpj-mask.pipe';
+import { CurrencyPipe } from '@angular/common';
+import { MessageModule } from 'primeng/message';
 
 @Component({
   selector: 'app-pessoas-tabs',
@@ -47,9 +51,11 @@ import { CpfCnpjMaskPipe } from '../../../pipes/cpf-cnpj-mask.pipe';
     SelectModule,
     CpfCnpjMaskDirective,
     CpfCnpjMaskPipe,
+    CurrencyPipe,
     AvatarModule,
     ScrollPanelModule,
     DatePickerModule,
+    MessageModule,
   ],
   templateUrl: './pessoas-tabs.html',
   providers: [MessageService],
@@ -61,7 +67,13 @@ export class PessoasTabsComponent {
   pessoas: PessoaResponse[] = [];
 
   modalFormularioAberto: boolean = false;
+  modalHistoricoAberto: boolean = false;
   editandoPessoa: PessoaResponse | undefined;
+  pessoaHistorico: PessoaResponse | undefined;
+  historicoCompleto: HistoricoPessoaItem[] = [];
+  historicoFiltrado: HistoricoPessoaItem[] = [];
+  searchHistorico: string = '';
+  carregandoHistorico: boolean = false;
 
   paginaAtual: number = 0;
   itensPorPagina: number = 4;
@@ -150,6 +162,95 @@ export class PessoasTabsComponent {
   esconderFormularioModal(form: NgForm) {
     this.editandoPessoa = undefined;
     form.resetForm();
+  }
+
+  abrirModalHistorico(pessoa: PessoaResponse) {
+    this.pessoaHistorico = pessoa;
+    this.searchHistorico = '';
+    this.carregandoHistorico = true;
+    this.modalHistoricoAberto = true;
+    this.buscarHistoricoPessoa(pessoa.id);
+  }
+
+  fecharModalHistorico() {
+    this.modalHistoricoAberto = false;
+    this.pessoaHistorico = undefined;
+    this.historicoCompleto = [];
+    this.historicoFiltrado = [];
+    this.searchHistorico = '';
+  }
+
+  buscarHistoricoPessoa(idPessoa: number) {
+    this.carregandoHistorico = true;
+    this.pessoaService.buscarHistoricoPessoa(idPessoa).subscribe({
+      next: (historico: HistoricoPessoaItem[]) => {
+        this.historicoCompleto = historico;
+        this.historicoFiltrado = historico;
+        this.carregandoHistorico = false;
+      },
+      error: (err) => {
+        console.error(err);
+        this.toastService.add({
+          summary: 'Erro ao carregar histórico!',
+          detail: 'Não foi possível carregar o histórico da pessoa.',
+          severity: 'error',
+        });
+        this.carregandoHistorico = false;
+      },
+    });
+  }
+
+  filtrarHistorico() {
+    if (!this.searchHistorico || this.searchHistorico.trim() === '') {
+      this.historicoFiltrado = this.historicoCompleto;
+      return;
+    }
+
+    const termoBusca = this.searchHistorico.toLowerCase().trim();
+    this.historicoFiltrado = this.historicoCompleto.filter((item) => {
+      if (item.tipo === 'operacao') {
+        const operacao = item.dados as Operacao;
+        return (
+          operacao.id.toString().includes(termoBusca) ||
+          operacao.produto.numeroSerie.toLowerCase().includes(termoBusca) ||
+          operacao.produto.aparelho.toLowerCase().includes(termoBusca) ||
+          operacao.produto.modelo.toLowerCase().includes(termoBusca)
+        );
+      } else {
+        const servico = item.dados as Servico;
+        return (
+          servico.id.toString().includes(termoBusca) ||
+          servico.produto.numeroSerie.toLowerCase().includes(termoBusca) ||
+          servico.produto.aparelho.toLowerCase().includes(termoBusca) ||
+          (servico.produto.modelo && servico.produto.modelo.toLowerCase().includes(termoBusca))
+        );
+      }
+    });
+  }
+
+  getTipoOperacaoLabel(tipo: number): string {
+    switch (tipo) {
+      case 0:
+        return 'Venda';
+      case 1:
+        return 'Compra';
+      case 2:
+        return 'Troca';
+      default:
+        return 'Desconhecido';
+    }
+  }
+
+  getTipoServicoLabel(tipo: number): string {
+    return tipo === 0 ? 'Externo' : 'Interno';
+  }
+
+  getOperacao(item: HistoricoPessoaItem): Operacao {
+    return item.dados as Operacao;
+  }
+
+  getServico(item: HistoricoPessoaItem): Servico {
+    return item.dados as Servico;
   }
 
   enviarFormulario(form: NgForm) {
